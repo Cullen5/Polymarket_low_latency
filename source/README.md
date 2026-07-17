@@ -2,7 +2,7 @@
 
 **Strategy, infrastructure, deployment, and a production post-mortem.**
 
-📄 **[Read the full write-up (PDF)](Polymarket_low_latency_writeup.pdf)**
+📄 **[Read the full write-up (PDF)](../Polymarket_low_latency_writeup.pdf)**
 
 A two-node, cross-continent low-latency trading system built to exploit the lag with
 which Polymarket's short-dated crypto ("up/down") markets reprice against Binance
@@ -55,9 +55,12 @@ edge fades in fast markets (reversal + competition, not system throughput):
 
 ## Repository layout
 
+The compiled write-up (`Polymarket_low_latency_writeup.pdf`) sits in the repository
+root. Everything else lives in `source/`:
+
 | File | Description |
 |---|---|
-| `Polymarket_low_latency_writeup.pdf` | Compiled write-up (start here) |
+| `../Polymarket_low_latency_writeup.pdf` | Compiled write-up (start here) |
 | `Polymarket_low_latency_writeup.tex` | LaTeX source |
 | `tmsce.cls` | Document class |
 | `make_figures.py` | Figure-generation script (matplotlib) |
@@ -66,7 +69,7 @@ edge fades in fast markets (reversal + competition, not system throughput):
 ## Building the PDF
 
 Compile with any LaTeX toolchain (two passes for the table of contents and
-cross-references), e.g.:
+cross-references), e.g. from inside `source/`:
 
 ```bash
 pdflatex Polymarket_low_latency_writeup.tex
