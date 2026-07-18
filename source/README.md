@@ -7,8 +7,8 @@
 A two-node, cross-continent low-latency trading system built to exploit the lag with
 which Polymarket's short-dated crypto ("up/down") markets reprice against Binance
 spot. The system was calibrated on recorded data, validated in replay, deployed to
-AWS, and traded with real capital. It was profitable in backtest and lost money live,
-for a single, instructive reason.
+AWS, and traded with real capital. It was profitable in backtest but came out flat
+live, for a single, instructive reason.
 
 ---
 
@@ -21,8 +21,9 @@ orders on the correct outcome token before the Polymarket book catches up. End-t
 latency was **~140–150 ms**, dominated by the transatlantic hop. In an 8,576-trade
 replay backtest the strategy won **61.4%** with a coherent, well-structured edge. Live,
 **only ~1 order in 10 filled**: the displayed Polymarket depth was largely **spoofed**,
-cancelled the instant a real order tried to cross it. The latency edge was real; the
-liquidity it was racing toward was not.
+cancelled the instant a real order tried to cross it, and the fills that did occur were
+close to coin flips, so the live deployment came out **flat**. The latency edge was
+real; the liquidity it was racing toward was not.
 
 ## Headline numbers (replay backtest, paper fill assumption)
 
@@ -36,6 +37,7 @@ liquidity it was racing toward was not.
 | End-to-end latency | ~140–150 ms (measured) |
 | Infra cost | 2 × `c6a.large`, ~$100/month |
 | **Live fill rate** | **~10% (vs ~100% in paper)** |
+| **Live outcome** | **effectively flat — fills were rare and adversely selected (near coin flips)** |
 
 ## System architecture
 

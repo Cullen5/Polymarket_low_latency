@@ -35,14 +35,45 @@
 
 % ---------------- Title/Author ----------------
 \begin{titlepage}
-    \vspace*{\fill}
+    \vspace*{2.1cm}
     \begin{center}
         {\LARGE\bfseries Low-Latency Cross-Venue Arbitrage:\\[0.4em]
-         Binance $\rightarrow$ Polymarket} \\[1.2em]
-        {\large Strategy, Infrastructure, Deployment, and a Production Post-Mortem} \\[2em]
+         Binance $\rightarrow$ Polymarket} \\[1.1em]
+        {\large Strategy, Infrastructure, Deployment, and a Production Post-Mortem} \\[1.6em]
         {\large Cullen Trace Campana}
     \end{center}
-    \vspace*{\fill}
+    \vspace{1.9em}
+    \begin{center}
+    \begin{minipage}{0.86\textwidth}
+        \small
+        \setlength{\parindent}{0pt}
+        \textbf{Abstract.} This report documents the design, deployment, and
+        post-mortem of a production, real-money low-latency trading system that
+        exploited a repricing lag between Binance spot and Polymarket's short-dated
+        crypto prediction markets. The system spans two AWS regions. A Tokyo node
+        co-located with Binance detects order-book moves through a three-gate detector
+        and transmits a 20-byte, loss-tolerant UDP signal to a Dublin node co-located
+        with Polymarket, which validates against the live CLOB and executes
+        fill-and-kill orders. Node-internal compute is sub-millisecond (signal-to-wire
+        50--200\,\textmu s), and end-to-end latency, dominated by the transatlantic
+        hop, was measured at 140--150\,ms, inside the 150--500\,ms window over which
+        the target book reprices. Detection is calibrated per asset with Optuna and
+        augmented by per-asset LightGBM and random-forest meta-labeling; execution runs
+        eight shared-nothing per-asset pipelines behind an explicit per-position state
+        machine, a dual-window rate limiter, and a mock-to-live harness with exact API
+        parity.
+        Across an $8{,}576$-trade replay backtest the strategy won $61.4\%$ with a
+        coherent, well-structured microstructure edge (repricing half-life
+        ${\approx}\,786$\,ms). Deployed with real capital on ${\sim}\$100$/month of
+        infrastructure, it came out effectively flat: the displayed Polymarket depth
+        was largely spoofed, so the live fill rate fell to ${\sim}10\%$ against
+        ${\sim}100\%$ in paper, and the orders that did fill were close to coin flips.
+        The report quantifies and explains this outcome, a market-microstructure limit
+        rather than an engineering one, and draws general lessons for latency arbitrage
+        against untrusted liquidity.
+    \end{minipage}
+    \end{center}
+    \vfill
 \end{titlepage}
 
 \clearpage
@@ -58,7 +89,7 @@ well-defined inefficiency: Polymarket's short-dated crypto ``up-or-down''
 prediction markets reprice with a measurable lag relative to the underlying spot
 price on Binance. The system was engineered to production depth: two co-located
 compute nodes in different AWS regions, a hand-rolled 20-byte UDP signalling
-protocol, lock-free per-asset processing pipelines, a full mock-to-live execution
+protocol, shared-nothing per-asset processing pipelines, a full mock-to-live execution
 harness, and per-asset parameter calibration against replayed market data. It was
 deployed to AWS and traded with real capital.
 
@@ -79,8 +110,10 @@ was that the liquidity it was pricing against did not exist. The displayed depth
 Polymarket's order book was, in large part, spoofed. In paper trading, where fills
 were simulated against the \emph{displayed} book, the system filled essentially every
 marketable order. In live trading, where fills were matched against \emph{real}
-resting size, roughly one order in ten filled. The edge was priced into a book that
-disappeared as soon as a real order tried to cross it.
+resting size, roughly one order in ten filled, and those fills were close to coin
+flips. The edge was priced into a book that disappeared as soon as a real order tried
+to cross it. The strategy did not lose money; it simply could not capture the edge it
+was built for, and was retired near break-even.
 
 \subsection{The Trade Idea}
 
@@ -197,7 +230,7 @@ The edge is bounded on both sides. On one side, the repricing lag sets the maxim
 time the opportunity exists, and Figure~\ref{fig:repricing} shows the useful part is
 barely two seconds. On the other, the physical distance between the price source
 (Binance, in Asia) and the execution venue (Polymarket, reachable from Europe or the
-US) imposes an $\sim$120\,ms one-way transit paid on every signal. The system
+US) imposes a one-way transit of $\sim$120\,ms on every signal. The system
 therefore operates with little margin: it must detect, decide, transmit, re-decide,
 sign, and submit inside a window that the transit alone nearly consumes. This
 tension, a real but geographically expensive edge, motivated the two-node,
@@ -548,7 +581,7 @@ The results in this section come from replaying the full strategy (detection, ga
 execution logic, fees, and exits) over $13$ recorded feed sessions
 ($8{,}576$ trades across roughly $52$ hours of order flow). The analysis is confined
 to the 5-minute markets, which is deliberate rather than a limitation: the large
-majority of the strategy's profit came from the 5-minute windows, where the higher
+majority of the backtested P\&L came from the 5-minute windows, where the higher
 window-rotation frequency produces more repricing events per hour than the 15-minute
 markets. Fills are simulated against the recorded Polymarket book. As
 Section~\ref{sec:postmortem} explains, that fill assumption is what did not hold
@@ -683,7 +716,9 @@ stale and thin conditions, and marketable orders filled at essentially $100\%$. 
 mock filled any order the displayed book could satisfy, and the displayed book always
 appeared deep enough. Live, with real capital, roughly \textbf{one order in ten
 filled}. Same signals, same gates, same latency. Nine times out of ten, the liquidity
-shown on the book was gone by the time the order arrived.
+shown on the book was gone by the time the order arrived. The orders that did fill
+were close to coin flips, so the live deployment came out effectively flat: it did not
+lose money, but it did not capture the backtested edge either.
 
 \subsection{Root Cause: Spoofed Liquidity}
 
@@ -712,9 +747,9 @@ It is useful to separate what failed from what did not. The signal was predictiv
 (Figure~\ref{fig:repricing}). The backtest was profitable with coherent structure
 (Figures~\ref{fig:equity}--\ref{fig:drivers}). The latency budget was met
 (Figure~\ref{fig:latency}). The engineering was correct: the system did what it was
-built to do, on time. The strategy still lost, because a latency arbitrage implicitly
-assumes that winning the race entitles you to the liquidity at the finish line, and
-in this venue it did not.
+built to do, on time. The strategy still could not make money, because a latency
+arbitrage implicitly assumes that winning the race entitles you to the liquidity at
+the finish line, and in this venue it did not.
 
 \subsection{Adverse Selection, Restated}
 
@@ -723,7 +758,9 @@ adversely selected. On the occasions liquidity did not vanish, it often did not
 vanish because the resting side was willing to trade, which is disproportionately the
 case when that side is better informed or the move is about to reverse. The strategy
 was thus filled mainly when being filled was worst, and starved when being filled
-would have been best. A displayed-book backtest cannot represent this, because it
+would have been best. The fills that did occur were therefore close to a coin flip,
+which is why the live deployment came out flat rather than either profitable or
+loss-making. A displayed-book backtest cannot represent this, because it
 fills every order symmetrically regardless of why the counterparty is or is not
 there.
 
@@ -747,8 +784,8 @@ however attractive the signal.
 
 A paper harness for a liquidity-taking strategy must include a fill model that can
 decline. Even a crude one (filling a displayed level only with some probability, or
-applying a haircut calibrated to observed live fill rates) would have turned the
-$61\%$-win-rate backtest into a losing one and prevented the deployment. The point
+applying a haircut calibrated to observed live fill rates) would have collapsed the
+$61\%$-win-rate backtest to break-even or worse and prevented the deployment. The point
 generalises: a backtest that fills against displayed depth is only valid for
 liquidity-\emph{providing} strategies; for liquidity-takers it is systematically
 optimistic and must be corrected with a realistic, ideally empirically-calibrated,
@@ -768,7 +805,7 @@ None of this invalidates cross-venue latency arbitrage as a class. It works when
 liquidity being raced toward is firm: deep, professionally market-made venues where
 displayed size is largely real and cancellation-on-arrival is the exception. The
 infrastructure built here (the two-node split, the minimal UDP protocol, the
-lock-free per-asset pipelines, the mock-to-live parity, and the calibration and
+shared-nothing per-asset pipelines, the mock-to-live parity, and the calibration and
 meta-labeling stack) is sound and reusable. What must change is the target: a venue
 whose book can be trusted, or a strategy that provides liquidity rather than taking
 it.
@@ -782,14 +819,16 @@ real and empirically validated inefficiency, and it failed for a reason that non
 the engineering it demonstrates could have fixed. The signal predicted short-horizon
 repricing; the backtest was profitable with coherent conditional structure; the
 infrastructure delivered orders inside the repricing window; the deployment was
-cheap, stable, and correct. The strategy still lost money, because the liquidity it
+cheap, stable, and correct. The strategy still made no money, because the liquidity it
 was designed to capture was largely illusory, and because the paper harness, faithful
-to the displayed book, could not detect this until real capital met the real book.
+to the displayed book, could not detect this until real capital met the real book. It
+did not lose money; the backtested edge simply did not survive live execution, and the
+deployment was retired flat.
 
 \medskip
 \noindent The engineering artefacts retain their value: a template for co-located
 two-node systems, a compact loss-tolerant signalling protocol, a disciplined
-lock-free processing model, and a mock-to-live harness with faithful API parity. The
+shared-nothing processing model, and a mock-to-live harness with faithful API parity. The
 strategic lesson is more portable than any of them. In a latency arbitrage, speed is
 necessary but not sufficient; the binding question is whether the liquidity at the
 end of the race is real. On Polymarket's short-dated crypto markets, in this period,
@@ -856,6 +895,7 @@ inexpensive deployment rather than a large one is the useful result here.
     Repricing half-life    & $\sim$786\,ms (median) \\
     \midrule
     \textbf{Live fill rate} & \textbf{$\sim$10\% (vs $\sim$100\% paper)} \\
+    \textbf{Live outcome}   & \textbf{effectively flat} \\
     \bottomrule
   \end{tabular}
 \end{table}
